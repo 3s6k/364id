@@ -20,10 +20,16 @@
         .card { background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid #2e2e32; margin-bottom: 20px; }
         textarea { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #2e2e32; background: #1f1f23; color: white; outline: none; font-family: monospace; resize: vertical; }
 
-        /* フィルター設定エリア */
-        .filter-group { display: flex; gap: 20px; margin: 10px 0 15px 0; background: #1f1f23; padding: 12px; border-radius: 6px; border: 1px solid #2e2e32; }
+        /* 設定エリア */
+        .filter-group { display: flex; flex-wrap: wrap; gap: 20px; margin: 10px 0 15px 0; background: #1f1f23; padding: 12px; border-radius: 6px; border: 1px solid #2e2e32; }
         .filter-item { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; cursor: pointer; color: var(--text-main); }
         .filter-item input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent-color); }
+
+        /* 追加設定用スタイル */
+        .custom-config { margin-bottom: 15px; border-top: 1px solid #2e2e32; pt: 15px; padding-top: 15px; }
+        .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .input-sub { padding: 8px; border-radius: 4px; border: 1px solid #2e2e32; background: #101014; color: white; outline: none; font-size: 0.85rem; width: 100%; }
+        select.input-sub { cursor: pointer; }
 
         .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .btn { padding: 12px; border-radius: 6px; border: none; background: var(--accent-color); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
@@ -52,19 +58,32 @@
 
     <div class="card">
         <label style="font-size: 0.9rem; color: var(--text-sub);">Tokens (カンマ区切り)</label>
-        <textarea id="tokens" rows="3" placeholder="token1, token2, token3..."></textarea>
+        <textarea id="tokens" rows="3" placeholder="token1, token2..."></textarea>
 
         <div class="filter-group">
             <label class="filter-item">
-                <input type="checkbox" id="allow-numbers"> <b>数字 (0-9)</b>
+                <input type="checkbox" id="allow-numbers" checked> <b>数字 (0-9)</b>
             </label>
             <label class="filter-item">
                 <input type="checkbox" id="allow-symbols"> <b>記号 (. _)</b>
             </label>
         </div>
-        <p style="font-size: 0.75rem; color: var(--text-sub); margin-top: -10px; margin-bottom: 15px; margin-left: 5px;">
-            ※英字(a-z)は常に含まれます。
-        </p>
+
+        <div class="custom-config">
+            <div class="input-row">
+                <div>
+                    <label style="font-size: 0.75rem; color: var(--text-sub);">絶対に入れる文字</label>
+                    <input type="text" id="mandatory-char" class="input-sub" value="">
+                </div>
+                <div>
+                    <label style="font-size: 0.75rem; color: var(--text-sub);">位置設定</label>
+                    <select id="position-mode" class="input-sub">
+                        <option value="prefix">先端に固定 (順序維持)</option>
+                        <option value="random">ランダムな位置</option>
+                    </select>
+                </div>
+            </div>
+        </div>
 
         <div class="btn-group">
             <button id="start-btn" class="btn" onclick="startChecking()">スキャン開始</button>
@@ -92,14 +111,35 @@
     function generateTarget() {
         const useNum = document.getElementById('allow-numbers').checked;
         const useSym = document.getElementById('allow-symbols').checked;
+        const rawMandatory = document.getElementById('mandatory-char').value;
+        const posMode = document.getElementById('position-mode').value;
 
-        let chars = "abcdefghijklmnopqrstuvwxyz"; // 英字は固定
-        if (useNum) chars += "0123456789";
-        if (useSym) chars += "._";
+        // カンマ区切りがあればそのまま結合
+        const mandatoryStr = rawMandatory.includes(',') ? rawMandatory.split(',').join('') : rawMandatory;
 
-        let res = "";
-        for (let i = 0; i < 4; i++) res += chars.charAt(Math.floor(Math.random() * chars.length));
-        return res;
+        let pool = "abcdefghijklmnopqrstuvwxyz";
+        if (useNum) pool += "0123456789";
+        if (useSym) pool += "._";
+
+        let resArr = mandatoryStr.split('');
+
+        // 4文字になるまでプールから補充
+        while (resArr.length < 4) {
+            resArr.push(pool.charAt(Math.floor(Math.random() * pool.length)));
+        }
+
+        // 4文字を超えていたらカット
+        if (resArr.length > 4) resArr = resArr.slice(0, 4);
+
+        if (posMode === "random") {
+            // シャッフル
+            for (let i = resArr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [resArr[i], resArr[j]] = [resArr[j], resArr[i]];
+            }
+        }
+
+        return resArr.join('');
     }
 
     function addLog(text, className = "") {
@@ -123,7 +163,7 @@
             }
             if (!res.ok) return { status: 'invalid' };
             const data = await res.json();
-            return { status: 'ok', taken: !data.taken };
+            return { status: 'ok', available: !data.taken };
         } catch (e) { return { status: 'error' }; }
     }
 
@@ -151,7 +191,7 @@
             const result = await checkUsername(currentToken, target);
 
             if (result.status === 'ok') {
-                if (result.taken) {
+                if (result.available) {
                     addLog(`HIT: ${target}`, "available");
                     hits.push(target);
                     document.getElementById('hit-list').innerText = hits.join(', ');
@@ -167,7 +207,7 @@
 
             tokenIndex = (tokenIndex + 1) % tokenList.length;
             document.getElementById('status-display').innerText = `トークン数: ${tokenList.length} | 実行中...`;
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 400));
         }
     }
 
@@ -180,7 +220,7 @@
     function copyHits() {
         if (hits.length === 0) return;
         navigator.clipboard.writeText(hits.join('\n'));
-        alert("ヒットリストをコピーしました");
+        alert("コピーしました");
     }
 </script>
 
